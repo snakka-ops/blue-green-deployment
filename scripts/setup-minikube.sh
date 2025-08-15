@@ -4,7 +4,7 @@ set -e
 
 echo "🚀 Starting Blue-Green Deployment Setup on Minikube..."
 
-minikube start --memory=8192 --cpus=4 --kubernetes-version=v1.28.0 --addons=ingress,metrics-server
+ minikube start --kubernetes-version=v1.28.0 --memory=2200mb --cpus=2 --addons=ingress,metrics-server
 
 # Install ArgoCD
 kubectl create namespace argocd --dry-run=client -o yaml | kubectl apply -f -
