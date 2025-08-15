@@ -1,1 +1,73 @@
 
+{
+  "dashboard": {
+    "id": null,
+    "title": "Blue-Green Deployment Dashboard",
+    "tags": ["blue-green", "deployment"],
+    "timezone": "browser",
+    "panels": [
+      {
+        "id": 1,
+        "title": "Blue Environment Status",
+        "type": "stat",
+        "targets": [
+          {
+            "expr": "up{job=\"blue-green-apps\", version=\"blue\"}",
+            "refId": "A"
+          }
+        ],
+        "gridPos": {"h": 8, "w": 12, "x": 0, "y": 0}
+      },
+      {
+        "id": 2,
+        "title": "Green Environment Status", 
+        "type": "stat",
+        "targets": [
+          {
+            "expr": "up{job=\"blue-green-apps\", version=\"green\"}",
+            "refId": "A"
+          }
+        ],
+        "gridPos": {"h": 8, "w": 12, "x": 12, "y": 0}
+      },
+      {
+        "id": 3,
+        "title": "Request Rate by Environment",
+        "type": "graph",
+        "targets": [
+          {
+            "expr": "rate(nginx_http_requests_total{version=\"blue\"}[5m])",
+            "legendFormat": "Blue Environment",
+            "refId": "A"
+          },
+          {
+            "expr": "rate(nginx_http_requests_total{version=\"green\"}[5m])",
+            "legendFormat": "Green Environment", 
+            "refId": "B"
+          }
+        ],
+        "gridPos": {"h": 8, "w": 24, "x": 0, "y": 8}
+      },
+      {
+        "id": 4,
+        "title": "Response Time Comparison",
+        "type": "graph",
+        "targets": [
+          {
+            "expr": "histogram_quantile(0.95, rate(nginx_http_request_duration_seconds_bucket{version=\"blue\"}[5m]))",
+            "legendFormat": "Blue 95th percentile",
+            "refId": "A"
+          },
+          {
+            "expr": "histogram_quantile(0.95, rate(nginx_http_request_duration_seconds_bucket{version=\"green\"}[5m]))",
+            "legendFormat": "Green 95th percentile",
+            "refId": "B"
+          }
+        ],
+        "gridPos": {"h": 8, "w": 24, "x": 0, "y": 16}
+      }
+    ],
+    "time": {"from": "now-1h", "to": "now"},
+    "refresh": "5s"
+  }
+}
