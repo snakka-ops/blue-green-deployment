@@ -1,0 +1,80 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: nginx-blue
+  labels:
+    app: nginx
+    version: blue
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: nginx
+      version: blue
+  template:
+    metadata:
+      labels:
+        app: nginx
+        version: blue
+    spec:
+      containers:
+      - name: nginx
+        image: nginx:1.20-alpine
+        ports:
+        - containerPort: 80
+        resources:
+          requests:
+            memory: "64Mi"
+            cpu: "50m"
+          limits:
+            memory: "128Mi"
+            cpu: "100m"
+        env:
+        - name: COLOR
+          value: "blue"
+        volumeMounts:
+        - name: config-volume
+          mountPath: /usr/share/nginx/html
+      volumes:
+      - name: config-volume
+        configMap:
+          name: blue-config
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: blue-config
+data:
+  index.html: |
+    <!DOCTYPE html>
+    <html>
+    <head>
+        <title>Blue Environment</title>
+        <style>
+            body {
+                background-color: #4A90E2;
+                color: white;
+                font-family: Arial, sans-serif;
+                text-align: center;
+                padding: 50px;
+            }
+            .container {
+                max-width: 800px;
+                margin: 0 auto;
+            }
+        </style>
+    </head>
+    <body>
+        <div class="container">
+            <h1>🔵 Blue Environment</h1>
+            <p>Version: 1.0.0</p>
+            <p>Current time: <span id="time"></span></p>
+            <p>Environment: Production (Blue)</p>
+        </div>
+        <script>
+            setInterval(() => {
+                document.getElementById('time').textContent = new Date().toLocaleString();
+            }, 1000);
+        </script>
+    </body>
+    </html>
