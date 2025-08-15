@@ -1,1 +1,194 @@
 
+pipeline {
+    agent {
+        kubernetes {
+            yaml '''
+                apiVersion: v1
+                kind: Pod
+                spec:
+                  containers:
+                  - name: docker
+                    image: docker:latest
+                    command:
+                    - cat
+                    tty: true
+                    volumeMounts:
+                    - mountPath: /var/run/docker.sock
+                      name: docker-sock
+                  - name: kubectl
+                    image: bitnami/kubectl:latest
+                    command:
+                    - cat
+                    tty: true
+                  volumes:
+                  - name: docker-sock
+                    hostPath:
+                      path: /var/run/docker.sock
+            '''
+        }
+    }
+
+    environment {
+        DOCKER_REGISTRY = 'your-registry.com'
+        APP_NAME = 'nginx-app'
+        NAMESPACE = 'default'
+        ARGOCD_SERVER = 'argocd-server.argocd.svc.cluster.local:80'
+    }
+
+    stages {
+        stage('Checkout') {
+            steps {
+                checkout scm
+            }
+        }
+
+        stage('Build & Test') {
+            steps {
+                script {
+                    echo 'Building application...'
+                    // Add your build steps here
+                }
+            }
+        }
+
+        stage('Security Scan') {
+            steps {
+                container('docker') {
+                    script {
+                        echo 'Running security scans...'
+                        // Add security scanning with tools like Trivy
+                        sh 'docker run --rm -v /var/run/docker.sock:/var/run/docker.sock aquasec/trivy image nginx:latest'
+                    }
+                }
+            }
+        }
+
+        stage('Build Docker Image') {
+            steps {
+                container('docker') {
+                    script {
+                        def imageTag = "${env.BUILD_NUMBER}-${env.GIT_COMMIT.take(7)}"
+                        sh "docker build -t ${DOCKER_REGISTRY}/${APP_NAME}:${imageTag} ."
+                        sh "docker push ${DOCKER_REGISTRY}/${APP_NAME}:${imageTag}"
+                        env.IMAGE_TAG = imageTag
+                    }
+                }
+            }
+        }
+
+        stage('Deploy to Green') {
+            steps {
+                container('kubectl') {
+                    script {
+                        // Update green deployment with new image
+                        sh '''
+                            kubectl set image deployment/nginx-green nginx=${DOCKER_REGISTRY}/${APP_NAME}:${IMAGE_TAG} -n ${NAMESPACE}
+                            kubectl rollout status deployment/nginx-green -n ${NAMESPACE} --timeout=300s
+                        '''
+                    }
+                }
+            }
+        }
+
+        stage('Health Check - Green') {
+            steps {
+                container('kubectl') {
+                    script {
+                        sh '''
+                            # Wait for green deployment to be ready
+                            kubectl wait --for=condition=available --timeout=300s deployment/nginx-green -n ${NAMESPACE}
+
+                            # Run health checks
+                            GREEN_SERVICE_IP=$(kubectl get service nginx-green-service -o jsonpath='{.status.loadBalancer.ingress[0].ip}')
+                            if [ -z "$GREEN_SERVICE_IP" ]; then
+                                GREEN_SERVICE_IP=$(minikube service nginx-green-service --url | cut -d'/' -f3 | cut -d':' -f1)
+                            fi
+
+                            echo "Testing green environment at $GREEN_SERVICE_IP"
+                            curl -f "http://$GREEN_SERVICE_IP" || exit 1
+                        '''
+                    }
+                }
+            }
+        }
+
+        stage('Approval for Production') {
+            steps {
+                script {
+                    input message: 'Deploy to production (switch to green)?', ok: 'Deploy'
+                }
+            }
+        }
+
+        stage('Switch Traffic to Green') {
+            steps {
+                container('kubectl') {
+                    script {
+                        sh '''
+                            # Switch main service to point to green
+                            kubectl patch service nginx-service -p '{"spec":{"selector":{"version":"green"}}}'
+
+                            echo "Traffic switched to green environment"
+                        '''
+                    }
+                }
+            }
+        }
+
+        stage('Verify Production') {
+            steps {
+                container('kubectl') {
+                    script {
+                        sh '''
+                            # Verify production is serving green
+                            sleep 10
+                            SERVICE_IP=$(minikube service nginx-service --url | cut -d'/' -f3 | cut -d':' -f1)
+                            curl -f "http://$SERVICE_IP" | grep -q "Green Environment"
+
+                            if [ $? -eq 0 ]; then
+                                echo "✅ Production is now serving Green environment"
+                            else
+                                echo "❌ Production verification failed"
+                                exit 1
+                            fi
+                        '''
+                    }
+                }
+            }
+        }
+
+        stage('Update ArgoCD Application') {
+            steps {
+                container('kubectl') {
+                    script {
+                        sh '''
+                            # Update ArgoCD application to sync with new state
+                            kubectl patch application blue-green-app -n argocd -p '{"operation":{"sync":{}}}' --type merge
+                        '''
+                    }
+                }
+            }
+        }
+    }
+
+    post {
+        always {
+            echo 'Pipeline completed'
+        }
+        success {
+            echo '✅ Blue-Green deployment successful!'
+        }
+        failure {
+            echo '❌ Deployment failed, consider rollback'
+            container('kubectl') {
+                script {
+                    // Automatic rollback on failure
+                    sh '''
+                        echo "Rolling back to blue environment"
+                        kubectl patch service nginx-service -p '{"spec":{"selector":{"version":"blue"}}}'
+                    '''
+                }
+            }
+        }
+    }
+}
