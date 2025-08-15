@@ -1,1 +1,53 @@
-argocd-sync-hook.yaml
+apiVersion: argoproj.io/v1alpha1
+kind: Workflow
+metadata:
+  generateName: blue-green-promote-
+  namespace: argocd
+spec:
+  entrypoint: blue-green-promotion
+  templates:
+  - name: blue-green-promotion
+    steps:
+    - - name: health-check-green
+        template: health-check
+        arguments:
+          parameters:
+          - name: environment
+            value: green
+    - - name: promote-to-production
+        template: traffic-switch
+        arguments:
+          parameters:
+          - name: target-version
+            value: green
+        when: "{{steps.health-check-green.outputs.result}} == 'healthy'"
+
+  - name: health-check
+    inputs:
+      parameters:
+      - name: environment
+    container:
+      image: curlimages/curl:latest
+      command: [sh, -c]
+      args: 
+      - |
+        SERVICE_URL="http://nginx-{{inputs.parameters.environment}}-service.default.svc.cluster.local"
+        if curl -f "$SERVICE_URL" >/dev/null 2>&1; then
+          echo "healthy"
+        else
+          echo "unhealthy"
+          exit 1
+        fi
+
+  - name: traffic-switch
+    inputs:
+      parameters:
+      - name: target-version
+    container:
+      image: bitnami/kubectl:latest
+      command: [sh, -c]
+      args:
+      - |
+        kubectl patch service nginx-service -n default -p '{"spec":{"selector":{"version":"{{inputs.parameters.target-version}}"}}}'
+        echo "Traffic switched to {{inputs.parameters.target-version}}"
+
