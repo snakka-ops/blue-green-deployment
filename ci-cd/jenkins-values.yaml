@@ -1,1 +1,23 @@
 
+controller:
+  serviceType: NodePort
+  adminPassword: admin123
+  installPlugins:
+    - kubernetes:3937.vd7b_82db_e5ec
+    - workflow-aggregator:590.v6a_d052e5a_a_b_5
+    - git:4.8.3
+    - configuration-as-code:1569.vb_72405b_80249
+    - blueocean:1.25.2
+    - prometheus:2.0.10
+    - docker-workflow:521.v1a_a_dd2073b_2e
+  additionalConfig: |
+    unclassified:
+      prometheusConfiguration:
+        useAuthenticatedEndpoint: false
+
+agent:
+  enabled: true
+
+persistence:
+  enabled: true
+  size: 20Gi
